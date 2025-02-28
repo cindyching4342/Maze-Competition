@@ -1,13 +1,11 @@
-## MAX_DISTANCE = 340 (25cm * 14)
-## cellDistanceTicks = 25 (Diameter of 6.5cm, 20 pulses per rotation)
-## if (distForward == minDist)  [ dFront? ]
-## lines 304 -313
 
-#include <Encoder.h>       // Rotary encoder library
 #include <Wire.h>          // I2C library (for MPU6050)
 #include <MPU6050.h>       // MPU6050 library
-#include <Ultrasonic.h>    // Ultrasonic sensor library (for HC-SR04)
 #include <EEPROM.h>        // EEPROM library
+#include <Arduino.h>
+#include <Ultrasonic.h>
+#include <Encoder.h>
+
 
 // ======================
 // Hardware Pin Assignments
@@ -80,17 +78,25 @@ void mpuSetup(){
         Serial.println("MPU6050 connected");
     } else {
         Serial.println("MPU6050 connection failed");
-        while(1)
+        while(1);
     }
     mpu.setFullScaleGyroRange(MPU6050_GYRO_FS_250);
     Serial.println("Setting full scale range");
+}
+
+// Function to get Z-axis rotation (yaw) from MPU6050
+void getOrientation() {
+  int16_t gyroX, gyroY, gyroZ;
+  mpu.getRotation(&gyroX, &gyroY, &gyroZ);
+  gz = gyroZ;
+  gz -= gyroZoffset;
 }
 
 // calibration() = calculateError()
 void calibration(){
     long sum = 0;
     for (int i = 0; i < 200; i++) {
-        getOrientation()
+        getOrientation();
         sum += gz;
         delay(5);
       }
@@ -98,17 +104,13 @@ void calibration(){
   Serial.print("Gyro Z offset: "); Serial.println(gyroZoffset);
 }
 
-// Function to get Z-axis rotation (yaw) from MPU6050
-void getOrientation() {
-    int16_t gyroX, gyroY, gyroZ;
-    mpu.getRotation(&gyroX, &gyroY, &gyroZ);
-    gz = gyroZ;
-    gz -= gyroZoffset;
-}
 
 void update() {
+
     static unsigned long previousTime = millis(); // Make previousTime static
+    unsigned long lastMovementTime = millis();
     unsigned long currentTime = millis();
+    const unsigned long resetThreshold = 500;
     float elapsedTime = (currentTime - previousTime) / 1000.0; // Convert to seconds
     previousTime = currentTime;
 
@@ -172,7 +174,7 @@ float dRight(){
     digitalWrite(TRIG_RIGHT,HIGH);
     delay(10);
     digitalWrite(TRIG_RIGHT,LOW);
-    return (pulseIn(ECHO_RIGTH,HIGH) * 0.034613 / 2.00);
+    return (pulseIn(ECHO_RIGHT,HIGH) * 0.034613 / 2.00);
 }
 
 // ======================
@@ -183,7 +185,13 @@ const int EEPROM_FLAG_ADDR = 0;              // Flag address to indicate stored 
 const int EEPROM_MAZE_START_ADDR = 1;          // Maze data start address
 
 // ======================
-// EEPROM
+// Motor Speed Variables
+// ======================
+const int baseSpeed = 100;
+const int fastSpeed = 200;
+
+// ======================
+// Rotary Encoder
 // ======================
 Encoder enc(ENC_PIN_A, ENC_PIN_B);
 
@@ -192,9 +200,9 @@ Encoder enc(ENC_PIN_A, ENC_PIN_B);
 // Reads the three ultrasonic sensors and updates wall information
 // for the current cell. Since no rear sensor is provided, we assume no wall.
 void scanWalls() {
-  unsigned int dFront = frontUS.Ranging(CM);
-  unsigned int dLeft  = leftUS.Ranging(CM);
-  unsigned int dRight = rightUS.Ranging(CM);
+  unsigned int dFront = frontUS.read(CM);
+  unsigned int dLeft  = leftUS.read(CM);
+  unsigned int dRight = rightUS.read(CM);
   // For the rear, assume no wall (simulate with a large distance)
   unsigned int dBack = 100;
   
@@ -207,24 +215,28 @@ void scanWalls() {
       if(dRight < WALL_DISTANCE_CM) wallBits |= 0x02;  // East wall
       if(dBack  < WALL_DISTANCE_CM)  wallBits |= 0x04;  // South wall (not measured)
       if(dLeft  < WALL_DISTANCE_CM) wallBits |= 0x08;  // West wall
+      Serial.println("Wall Detected: North");
       break;
     case 1: // Facing East
       if(dFront < WALL_DISTANCE_CM) wallBits |= 0x02;  // East wall
       if(dRight < WALL_DISTANCE_CM) wallBits |= 0x04;  // South wall
       if(dBack  < WALL_DISTANCE_CM) wallBits |= 0x08;  // West wall
       if(dLeft  < WALL_DISTANCE_CM) wallBits |= 0x01;  // North wall
+      Serial.println("Wall Detected: East");
       break;
     case 2: // Facing South
       if(dFront < WALL_DISTANCE_CM) wallBits |= 0x04;  // South wall
       if(dRight < WALL_DISTANCE_CM) wallBits |= 0x08;  // West wall
       if(dBack  < WALL_DISTANCE_CM) wallBits |= 0x01;  // North wall
       if(dLeft  < WALL_DISTANCE_CM) wallBits |= 0x02;  // East wall
+      Serial.println("Wall Detected: West");
       break;
     case 3: // Facing West
       if(dFront < WALL_DISTANCE_CM) wallBits |= 0x08;  // West wall
       if(dRight < WALL_DISTANCE_CM) wallBits |= 0x01;  // North wall
       if(dBack  < WALL_DISTANCE_CM) wallBits |= 0x02;  // East wall
       if(dLeft  < WALL_DISTANCE_CM) wallBits |= 0x04;  // South wall
+      Serial.println("Wall Detected: South");
       break;
   }
   // Merge new wall data with any previously recorded info
@@ -318,14 +330,14 @@ void driveTurnRight(int speed) {
 }
 
 // ======================
-// Function: turnByDegrees(float degrees)
-// Uses the MPU6050 to perform a precise 90° turn. Positive degrees for right, negative for left.
-void turnByDegrees(float degrees) {
-  float target = fabs(degrees);
+// Function: turnByDegree(float degree)
+// Uses the MPU6050 to perform a precise 90° turn. Positive degree for right, negative for left.
+void turnByDegree(float degree) {
+  float target = fabs(degree);
   // Start the appropriate turn
-  if (degrees > 0) {
+  if (degree > 0) {
     driveTurnRight(baseSpeed);
-  } else if (degrees < 0) {
+  } else if (degree < 0) {
     driveTurnLeft(baseSpeed);
   } else return;
 
@@ -335,16 +347,18 @@ void turnByDegrees(float degrees) {
 
     update();
     accumulated = fabs(yaw);
+    unsigned long startTime = millis(); 
     if (millis() - startTime > 5000) {
           Serial.println("Turn timed out!");
           break; // Exit the loop if it takes too long
   }
   driveStop();
   // Update current orientation
-  if (degrees > 0)
+  if (degree > 0)
     currentDirection = (currentDirection + 1) % 4;
-  else if (degrees < 0)
+  else if (degree < 0)
     currentDirection = (currentDirection + 3) % 4;
+}
 }
 
 // ======================
@@ -425,14 +439,14 @@ void decideAndMove(bool fastRun = false) {
   if (distForward == minDist) {
     moveForwardOneCell(fastRun ? fastSpeed : baseSpeed);
   } else if (distLeft == minDist) {
-    turnByDegrees(-90);
+    turnByDegree(-90);
     moveForwardOneCell(fastRun ? fastSpeed : baseSpeed);
   } else if (distRight == minDist) {
-    turnByDegrees(90);
+    turnByDegree(90);
     moveForwardOneCell(fastRun ? fastSpeed : baseSpeed);
   } else if (distBack == minDist) {
-    turnByDegrees(90);
-    turnByDegrees(90);
+    turnByDegree(90);
+    turnByDegree(90);
     moveForwardOneCell(fastRun ? fastSpeed : baseSpeed);
   }
 }
@@ -461,8 +475,8 @@ void setup() {
   pinMode(ECHO_RIGHT, INPUT);
   
   // Initialize MPU6050
-  mpuSetup()
-  calibration()
+  mpuSetup();
+  calibration();
   
   // Initialize maze mapping arrays
   for (int y = 0; y < MAZE_SIZE; y++) {
@@ -545,5 +559,14 @@ void loop() {
       decideAndMove(true);
     }
   }
+
+  Serial.print("Front distance: ");
+  Serial.println(dFront());
+  Serial.print("Left distance: ");
+  Serial.println(dLeft());
+  Serial.print("Right distance: ");
+  Serial.println(dRight());
+  decideAndMove();
   delay(5);
 }
+

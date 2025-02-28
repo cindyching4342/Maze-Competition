@@ -71,7 +71,6 @@ MPU6050 mpu;
 // Initialize MPU6050
 int16_t gz;
 float gyroZoffset = 0; // gyroZoffset=GyroErrorZ
-const float gz = 0;    // gz = gyroOutputBuffer
 float yaw = 0;
 
 void mpuSetup(){

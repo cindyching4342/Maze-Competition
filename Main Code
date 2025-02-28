@@ -1,5 +1,7 @@
 ## MAX_DISTANCE = 340 (25cm * 14)
 ## cellDistanceTicks = 25 (Diameter of 6.5cm, 20 pulses per rotation)
+## if (distForward == minDist)  [ dFront? ]
+## lines 304 -313
 
 #include <Encoder.h>       // Rotary encoder library
 #include <Wire.h>          // I2C library (for MPU6050)
@@ -65,14 +67,85 @@ uint8_t wallsGrid[MAZE_SIZE][MAZE_SIZE];       // Wall information bitfield per 
 // ======================
 // MPU-6050 Sensor
 // ======================
-MPU6050 mpu;
-float gyroZoffset = 0;
-const float GYRO_LSB_DEG = 131.0;  // For ±250°/s
-const float gyroOutputBuffer = 0;
-const float GyroErrorZ = 0;
+// MPU6050 mpu;
+// Initialize MPU6050
 
-// Time variables
-float lastTime, now, dt;
+void mpuSetup(){
+    Wire.begin();
+    // mpu.initialize();
+    Wire.beginTransmission(MPU);
+    Wire.write(0x6B);                 // Power management register
+    Wire.write(0x00);                 // Wake up MPU6050
+    Wire.endTransmission(true);
+    if(mpu.testConnection()){
+        Serial.println("MPU6050 connected");
+    } else {
+        Serial.println("MPU6050 connection failed");
+    }
+    // mpu.setFullScaleGyroRange(MPU6050_GYRO_FS_250);
+}
+
+void calibration(){
+    float gyroZoffset = 0; // gyroZoffset=GyroErrorZ
+    const float gz = 0;    // gz = gyroOutputBuffer
+    // Gyro calibration
+    long sum = 0;
+    for (int i = 0; i < 200; i++) {
+        int16_t gz;
+        // mpu.getRotation(NULL, NULL, &gz);
+        getOrientation()
+        sum += gz;
+        delay(5);
+      }
+  gyroZoffset = sum / 200.0;
+  Serial.print("Gyro Z offset: "); Serial.println(gyroZoffset);
+}
+
+// Function to get Z-axis rotation (yaw) from MPU6050
+void getOrientation() {
+    gz = 0;
+    const float GYRO_LSB_DEG = 131.0;  // For ±250°/s
+    Wire.beginTransmission(MPU);
+    Wire.write(0x47); // Gyroscope Z-axis high byte register
+    Wire.endTransmission(false);
+    Wire.requestFrom(MPU, 2, true);
+    
+    // Read and combine high and low byte
+    gz = (Wire.read() << 8 | Wire.read()) / GYRO_LSB_DEG;
+}
+
+void update() {
+    // Get current time
+    float previousTime, currentTime, elapsedTime;
+    currentTime = millis();
+    elapsedTime = (currentTime - previousTime) / 1000.0; // Convert to seconds
+    previousTime = currentTime;
+
+    // Get gyro data
+    getOrientation();
+
+    // Apply drift correction
+    gz -= gyroZoffset;
+
+    // Ignore small noise below threshold
+    if (abs(gyroOutputBuffer) < 0.05) {
+        gyroOutputBuffer = 0;
+    } else {
+        lastMovementTime = millis(); // Reset timer when movement is detected
+    }
+
+    // Integrate to calculate yaw
+    float accumulated = 0
+    float degree = 0
+    accumulated += gyroOutputBuffer * elapsedTime;
+    degree = round(yaw * 10) / 10.0;
+
+    // Reset drift if stationary for too long
+    if (millis() - lastMovementTime > resetThreshold) {
+        accumulated = 0;
+        degree = 0;
+    }
+}
 
 // ======================
 // Ultrasonic Sensor
@@ -258,16 +331,20 @@ void turnByDegrees(float degrees) {
     driveTurnLeft(baseSpeed);
   } else return;
 
-  float accumulated = 0.0;
-  unsigned long lastTime = micros();
+  // float accumulated = 0.0;
+  // unsigned long lastTime = micros();
   while (accumulated < target) {
+    /*
     int16_t gz;
-    mpu.getRotation(NULL, NULL, &gz);
-    float rate = fabs(gz - gyroZoffset) / GYRO_LSB_DEG; // deg/sec
+    // mpu.getRotation(NULL, NULL, &gz);
+    getOrientation()
+    // float rate = fabs(gz - gyroZoffset) / GYRO_LSB_DEG; // deg/sec
     unsigned long now = micros();
     float dt = (now - lastTime) / 1000000.0;
     lastTime = now;
     accumulated += rate * dt;
+    */
+    update()
   }
   driveStop();
   // Update current orientation
@@ -404,7 +481,8 @@ void setup() {
   long sum = 0;
   for (int i = 0; i < 200; i++) {
     int16_t gz;
-    mpu.getRotation(NULL, NULL, &gz);
+    // mpu.getRotation(NULL, NULL, &gz);
+    getOrientation()
     sum += gz;
     delay(5);
   }

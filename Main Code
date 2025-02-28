@@ -85,6 +85,7 @@ void mpuSetup(){
     // mpu.setFullScaleGyroRange(MPU6050_GYRO_FS_250);
 }
 
+// calibration() = calculateError()
 void calibration(){
     float gyroZoffset = 0; // gyroZoffset=GyroErrorZ
     const float gz = 0;    // gz = gyroOutputBuffer
@@ -468,26 +469,8 @@ void setup() {
   pinMode(ECHO_RIGHT, INPUT);
   
   // Initialize MPU6050
-  Wire.begin();
-  mpu.initialize();
-  if(mpu.testConnection()){
-    Serial.println("MPU6050 connected");
-  } else {
-    Serial.println("MPU6050 connection failed");
-  }
-  mpu.setFullScaleGyroRange(MPU6050_GYRO_FS_250);
-  
-  // Gyro calibration
-  long sum = 0;
-  for (int i = 0; i < 200; i++) {
-    int16_t gz;
-    // mpu.getRotation(NULL, NULL, &gz);
-    getOrientation()
-    sum += gz;
-    delay(5);
-  }
-  gyroZoffset = sum / 200.0;
-  Serial.print("Gyro Z offset: "); Serial.println(gyroZoffset);
+  mpuSetup()
+  calibration()
   
   // Initialize maze mapping arrays
   for (int y = 0; y < MAZE_SIZE; y++) {

@@ -174,7 +174,7 @@ void turnByDegrees(int degrees, int speed) {
 // Moves the robot forward one cell and then stops.
 void moveForwardOneCell(int speed) {
   driveForward(speed);
-  delay(1000);  // Adjust delay to travel one cell (e.g., 25 cm)
+  delay(750);  // Adjust delay to travel one cell (e.g., 25 cm)
   driveStop();
 }
 
